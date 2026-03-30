@@ -1,5 +1,0 @@
-{
-  "name": "Web Browser",
-  "description": "A stylish, modern, and responsive single-file browser simulator with ad-blocker, proxy, multi-language support, and theme customization.",
-  "requestFramePermissions": ["camera", "microphone", "geolocation"]
-}
