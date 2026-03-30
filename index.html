@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Browser - Standalone</title>
+    
+    <!-- Скрипты для работы React и Babel (для JSX в браузере) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Framer Motion (через CDN сложнее, используем упрощенные CSS анимации для стабильности в 1 файле) -->
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            overflow: hidden;
+        }
+        
+        .dark {
+            background-color: #09090b;
+            color: #fafafa;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+        .dark ::-webkit-scrollbar-thumb { background: #3f3f46; }
+        
+        iframe {
+            background-color: white;
+        }
+
+        .glass {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .profile-avatar {
+            transition: transform 0.2s;
+        }
+        .profile-avatar:hover {
+            transform: scale(1.1);
+        }
+        
+        /* Анимации появления */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+    </style>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        zinc: {
+                            950: '#09090b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- Иконки (обертка для Lucide) ---
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const [iconHtml, setIconHtml] = useState("");
+            
+            useEffect(() => {
+                const renderIcon = () => {
+                    if (window.lucide && window.lucide.icons) {
+                        // Ищем иконку в разных регистрах для надежности
+                        const iconName = name.charAt(0).toLowerCase() + name.slice(1);
+                        const icon = window.lucide.icons[name] || window.lucide.icons[iconName] || window.lucide.icons[name.toLowerCase()];
+                        
+                        if (icon && Array.isArray(icon)) {
+                            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                            svg.setAttribute("width", size);
+                            svg.setAttribute("height", size);
+                            svg.setAttribute("viewBox", "0 0 24 24");
+                            svg.setAttribute("fill", "none");
+                            svg.setAttribute("stroke", "currentColor");
+                            svg.setAttribute("stroke-width", "2");
+                            svg.setAttribute("stroke-linecap", "round");
+                            svg.setAttribute("stroke-linejoin", "round");
+                            
+                            const classes = className.split(" ").filter(c => c.trim() !== "");
+                            if (classes.length > 0) {
+                                svg.classList.add(...classes);
+                            }
+                            
+                            // Lucide icons structure can be [tagName, attrs, children] or [tagName, attrs]
+                            const children = icon[2] || [];
+                            children.forEach(child => {
+                                if (Array.isArray(child)) {
+                                    const [tagName, attrs] = child;
+                                    const element = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+                                    Object.entries(attrs || {}).forEach(([k, v]) => {
+                                        element.setAttribute(k, String(v));
+                                    });
+                                    svg.appendChild(element);
+                                }
+                            });
+                            
+                            setIconHtml(svg.outerHTML);
+                        }
+                    }
+                };
+
+                renderIcon();
+                const timer = setTimeout(renderIcon, 50);
+                const longTimer = setTimeout(renderIcon, 500);
+                return () => {
+                    clearTimeout(timer);
+                    clearTimeout(longTimer);
+                };
+            }, [name, size, className]);
+
+            return <span className="inline-flex items-center justify-center" dangerouslySetInnerHTML={{ __html: iconHtml }} />;
+        };
+
+        // --- Переводы ---
+        const translations = {
+            ru: {
+                settings: "Настройки",
+                adBlock: "Блокировка рекламы",
+                theme: "Тема",
+                language: "Язык",
+                light: "Светлая",
+                dark: "Темная",
+                system: "Системная",
+                enabled: "Включено",
+                disabled: "Выключено",
+                searchPlaceholder: "Введите URL или поисковый запрос...",
+                home: "Главная",
+                bookmarks: "Закладки",
+                history: "История",
+                back: "Назад",
+                forward: "Вперед",
+                refresh: "Обновить",
+                go: "Перейти",
+                incognito: "Инкогнито",
+                incognitoDesc: "В режиме инкогнито история и куки не сохраняются.",
+                passwords: "Пароли",
+                profiles: "Профили",
+                addProfile: "Добавить профиль",
+                save: "Сохранить",
+                delete: "Удалить",
+                noHistory: "История пуста",
+                noBookmarks: "Закладок нет",
+                noPasswords: "Пароли не сохранены",
+                active: "Активен",
+                searchEngine: "Поисковая система",
+                proxyMode: "Режим прокси (для Google/YouTube)",
+                openExternal: "Открыть в новой вкладке",
+                makeDefault: "Сделать браузером по умолчанию",
+                share: "Поделиться",
+                addBookmark: "Добавить закладку",
+                desktopVersion: "Версия ПК",
+                findOnPage: "Найти на странице",
+                printPage: "Печать страницы",
+                addToHome: "Добавить на домашнюю страницу",
+                downloads: "Загрузки",
+                more: "Еще"
+            },
+            en: {
+                settings: "Settings",
+                adBlock: "Ad Blocker",
+                theme: "Theme",
+                language: "Language",
+                light: "Light",
+                dark: "Dark",
+                system: "System",
+                enabled: "Enabled",
+                disabled: "Disabled",
+                searchPlaceholder: "Enter URL or search query...",
+                home: "Home",
+                bookmarks: "Bookmarks",
+                history: "History",
+                back: "Back",
+                forward: "Forward",
+                refresh: "Refresh",
+                go: "Go",
+                incognito: "Incognito",
+                incognitoDesc: "In incognito mode, history and cookies are not saved.",
+                passwords: "Passwords",
+                profiles: "Profiles",
+                addProfile: "Add Profile",
+                save: "Save",
+                delete: "Delete",
+                noHistory: "No history",
+                noBookmarks: "No bookmarks",
+                noPasswords: "No passwords saved",
+                active: "Active",
+                searchEngine: "Search Engine",
+                proxyMode: "Proxy Mode (for Google/YouTube)",
+                openExternal: "Open in new tab",
+                makeDefault: "Make default browser",
+                share: "Share",
+                addBookmark: "Add bookmark",
+                desktopVersion: "Desktop version",
+                findOnPage: "Find on page",
+                printPage: "Print page",
+                addToHome: "Add to home screen",
+                downloads: "Downloads",
+                more: "More"
+            }
+        };
+
+        const defaultSearchEngines = [
+            { id: 'bing', name: 'Bing', url: 'https://www.bing.com/search?q=' },
+            { id: 'google', name: 'Google', url: 'https://www.google.com/search?igu=1&q=' },
+            { id: 'yandex', name: 'Yandex', url: 'https://yandex.ru/search/?text=' },
+        ];
+
+        function App() {
+            // --- Состояние ---
+            const [profiles, setProfiles] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('nexus-profiles');
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                    }
+                } catch (e) {
+                    console.error("Failed to load profiles:", e);
+                }
+                return [{
+                    id: 'default',
+                    name: 'Default User',
+                    avatar: '👤',
+                    settings: {
+                        adBlockEnabled: false,
+                        theme: 'system',
+                        language: navigator.language.startsWith('ru') ? 'ru' : 'en',
+                        searchEngineId: 'bing',
+                        customSearchEngines: [],
+                        proxyEnabled: true
+                    },
+                    history: [],
+                    bookmarks: [],
+                    passwords: []
+                }];
+            });
+
+            const [activeProfileId, setActiveProfileId] = useState(() => localStorage.getItem('nexus-active-profile') || 'default');
+            const [isIncognito, setIsIncognito] = useState(false);
+            const [url, setUrl] = useState('https://www.bing.com');
+            const [inputUrl, setInputUrl] = useState('https://www.bing.com');
+            const [historyStack, setHistoryStack] = useState(['https://www.bing.com']);
+            const [historyIndex, setHistoryIndex] = useState(0);
+            const [iframeKey, setIframeKey] = useState(0);
+            
+            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [isProfilesOpen, setIsProfilesOpen] = useState(false);
+            const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+            const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
+            const [isPasswordsOpen, setIsPasswordsOpen] = useState(false);
+            const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+
+            const activeProfile = useMemo(() => {
+                const found = profiles.find(p => p.id === activeProfileId) || profiles[0];
+                if (!found) return null;
+                
+                // Возвращаем копию с дефолтными значениями, чтобы избежать мутации и гарантировать наличие полей
+                return {
+                    ...found,
+                    settings: {
+                        adBlockEnabled: false,
+                        theme: 'system',
+                        language: 'en',
+                        searchEngineId: 'bing',
+                        customSearchEngines: [],
+                        proxyEnabled: true,
+                        ...(found.settings || {})
+                    },
+                    history: found.history || [],
+                    bookmarks: found.bookmarks || [],
+                    passwords: found.passwords || []
+                };
+            }, [profiles, activeProfileId]);
+
+            const t = useMemo(() => {
+                if (!activeProfile) return translations.en;
+                return translations[activeProfile.settings.language] || translations.en;
+            }, [activeProfile]);
+
+            // --- Эффекты ---
+            useEffect(() => {
+                localStorage.setItem('nexus-profiles', JSON.stringify(profiles));
+                localStorage.setItem('nexus-active-profile', activeProfileId);
+            }, [profiles, activeProfileId]);
+
+            useEffect(() => {
+                const root = document.documentElement;
+                const theme = isIncognito ? 'dark' : activeProfile.settings.theme;
+                if (theme === 'system') {
+                    const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    root.classList.toggle('dark', systemDark);
+                } else {
+                    root.classList.toggle('dark', theme === 'dark');
+                }
+            }, [activeProfile.settings.theme, isIncognito]);
+
+            // Закрытие меню при клике вне его
+            useEffect(() => {
+                const handleClick = () => setIsMoreMenuOpen(false);
+                window.addEventListener('click', handleClick);
+                return () => window.removeEventListener('click', handleClick);
+            }, []);
+
+            // --- Логика ---
+            const updateActiveProfile = (updates) => {
+                setProfiles(prev => prev.map(p => p.id === activeProfileId ? { ...p, ...updates } : p));
+            };
+
+            const updateSettings = (updates) => {
+                updateActiveProfile({ settings: { ...activeProfile.settings, ...updates } });
+            };
+
+            const getProxiedUrl = (targetUrl) => {
+                if (!activeProfile.settings.proxyEnabled) return targetUrl;
+                
+                // Для Google используем параметр igu=1, который разрешает встраивание
+                if (targetUrl.includes('google.com')) {
+                    const separator = targetUrl.includes('?') ? '&' : '?';
+                    return targetUrl.includes('igu=1') ? targetUrl : `${targetUrl}${separator}igu=1`;
+                }
+
+                // Для YouTube используем embed-версию
+                if (targetUrl.includes('youtube.com/watch?v=')) {
+                    return targetUrl.replace('youtube.com/watch?v=', 'youtube.com/embed/');
+                }
+
+                // Для остальных сайтов, если включен прокси, используем CORS-прокси
+                // Это помогает обойти X-Frame-Options: DENY на многих сайтах
+                if (activeProfile.settings.proxyEnabled && !targetUrl.includes('google.com') && !targetUrl.includes('bing.com')) {
+                    return `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+                }
+
+                return targetUrl;
+            };
+
+            const navigateTo = (targetUrl, addToStack = true) => {
+                setUrl(targetUrl);
+                setInputUrl(targetUrl);
+                if (addToStack) {
+                    const newStack = historyStack.slice(0, historyIndex + 1);
+                    newStack.push(targetUrl);
+                    setHistoryStack(newStack);
+                    setHistoryIndex(newStack.length - 1);
+                }
+                if (!isIncognito) {
+                    const newItem = { id: Date.now(), url: targetUrl, title: targetUrl, timestamp: Date.now() };
+                    updateActiveProfile({ history: [newItem, ...activeProfile.history].slice(0, 100) });
+                }
+            };
+
+            const handleUrlSubmit = (e) => {
+                e.preventDefault();
+                let targetUrl = inputUrl.trim();
+                if (!targetUrl.startsWith('http')) {
+                    if (targetUrl.includes('.') && !targetUrl.includes(' ')) {
+                        targetUrl = 'https://' + targetUrl;
+                    } else {
+                        const engine = defaultSearchEngines.find(e => e.id === activeProfile.settings.searchEngineId) || defaultSearchEngines[0];
+                        targetUrl = engine.url + encodeURIComponent(targetUrl);
+                    }
+                }
+                navigateTo(targetUrl);
+            };
+
+            const goBack = () => {
+                if (historyIndex > 0) {
+                    const prevUrl = historyStack[historyIndex - 1];
+                    setHistoryIndex(historyIndex - 1);
+                    setUrl(prevUrl);
+                    setInputUrl(prevUrl);
+                }
+            };
+
+            const goForward = () => {
+                if (historyIndex < historyStack.length - 1) {
+                    const nextUrl = historyStack[historyIndex + 1];
+                    setHistoryIndex(historyIndex + 1);
+                    setUrl(nextUrl);
+                    setInputUrl(nextUrl);
+                }
+            };
+
+            const addBookmark = () => {
+                const newBookmark = { id: Date.now().toString(), url, title: url };
+                updateActiveProfile({ bookmarks: [newBookmark, ...activeProfile.bookmarks] });
+            };
+
+            const createProfile = () => {
+                const name = prompt(t.addProfile, `User ${profiles.length + 1}`);
+                if (name) {
+                    const newProfile = {
+                        ...activeProfile,
+                        id: Date.now().toString(),
+                        name,
+                        avatar: ['🦊', '🐱', '🐶', '🐼', '🐨'][Math.floor(Math.random() * 5)],
+                        history: [],
+                        bookmarks: [],
+                        passwords: []
+                    };
+                    setProfiles([...profiles, newProfile]);
+                    setActiveProfileId(newProfile.id);
+                }
+            };
+
+            // --- Компоненты UI ---
+            const MenuItem = ({ icon, label, onClick, danger = false }) => (
+                <button 
+                    onClick={(e) => { e.stopPropagation(); onClick(); setIsMoreMenuOpen(false); }}
+                    className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all hover:bg-zinc-100 dark:hover:bg-zinc-800 ${danger ? 'text-red-500' : 'text-zinc-700 dark:text-zinc-300'}`}
+                >
+                    <Icon name={icon} size={18} />
+                    <span className="text-sm font-medium">{label}</span>
+                </button>
+            );
+
+            const Modal = ({ isOpen, onClose, title, children }) => {
+                if (!isOpen) return null;
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="absolute inset-0 bg-black/40 glass" onClick={onClose}></div>
+                        <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl overflow-hidden animate-fade-in">
+                            <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                                <h2 className="text-xl font-bold">{title}</h2>
+                                <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full">
+                                    <Icon name="X" />
+                                </button>
+                            </div>
+                            <div className="p-6 max-h-[70vh] overflow-y-auto">
+                                {children}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            if (!activeProfile) {
+                return (
+                    <div className="h-screen w-full flex items-center justify-center bg-zinc-950 text-white">
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                            <p className="text-zinc-400 font-medium animate-pulse">Initializing Nexus...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className={`flex h-screen w-full transition-colors duration-300 ${isIncognito ? 'bg-zinc-950 text-white' : 'bg-white dark:bg-zinc-950 dark:text-white'}`}>
+                    
+                    {/* Sidebar */}
+                    <aside className={`hidden lg:flex flex-col w-64 border-r p-4 gap-2 ${isIncognito ? 'border-zinc-800 bg-zinc-950' : 'border-zinc-200 dark:border-zinc-800'}`}>
+                        <div className="flex items-center justify-between mb-8 px-2">
+                            <div className="flex items-center gap-2">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold italic ${isIncognito ? 'bg-zinc-700' : 'bg-blue-600'}`}>N</div>
+                                <span className="text-xl font-bold tracking-tight">Nexus</span>
+                            </div>
+                            {isIncognito && <div className="px-2 py-0.5 bg-zinc-800 rounded text-[10px] font-bold text-zinc-400">Private</div>}
+                        </div>
+                        
+                        <nav className="flex flex-col gap-1 flex-1">
+                            <button onClick={() => navigateTo('https://www.bing.com')} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
+                                <Icon name="Home" /> <span className="text-sm">{t.home}</span>
+                            </button>
+                            <button onClick={() => setIsBookmarksOpen(true)} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
+                                <Icon name="Bookmark" /> <span className="text-sm">{t.bookmarks}</span>
+                            </button>
+                            <button onClick={() => setIsHistoryOpen(true)} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
+                                <Icon name="History" /> <span className="text-sm">{t.history}</span>
+                            </button>
+                        </nav>
+
+                        <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 flex flex-col gap-1">
+                            <button onClick={() => setIsPasswordsOpen(true)} className="flex items-center gap-3 w-full p-3 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
+                                <Icon name="Shield" /> <span className="text-sm">{t.passwords}</span>
+                            </button>
+                            <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-3 w-full p-3 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all">
+                                <Icon name="Settings" /> <span className="text-sm">{t.settings}</span>
+                            </button>
+                        </div>
+                    </aside>
+
+                    {/* Main */}
+                    <main className="flex-1 flex flex-col min-w-0 relative">
+                        <header className={`h-16 border-b flex items-center px-4 gap-4 glass z-10 ${isIncognito ? 'bg-zinc-950/80 border-zinc-800' : 'bg-white/80 dark:bg-zinc-950/80 border-zinc-200 dark:border-zinc-800'}`}>
+                            <div className="flex items-center gap-1">
+                                <button onClick={goBack} disabled={historyIndex === 0} className={`p-2 rounded-lg ${historyIndex === 0 ? 'text-gray-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`}><Icon name="ArrowLeft" size={18} /></button>
+                                <button onClick={goForward} disabled={historyIndex === historyStack.length - 1} className={`p-2 rounded-lg ${historyIndex === historyStack.length - 1 ? 'text-gray-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`}><Icon name="ArrowRight" size={18} /></button>
+                                <button onClick={() => setIframeKey(k => k + 1)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"><Icon name="RotateCw" size={18} /></button>
+                            </div>
+
+                            <form onSubmit={handleUrlSubmit} className="flex-1 relative group">
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Icon name="Search" size={16} /></div>
+                                <input 
+                                    type="text" value={inputUrl} onChange={e => setInputUrl(e.target.value)}
+                                    placeholder={t.searchPlaceholder}
+                                    className={`w-full border-none rounded-full py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-blue-500/50 outline-none transition-all ${isIncognito ? 'bg-zinc-900' : 'bg-zinc-100 dark:bg-zinc-900'}`}
+                                />
+                            </form>
+
+                            <div className="flex items-center gap-2 relative">
+                                <button 
+                                    onClick={() => setIsIncognito(!isIncognito)} 
+                                    className={`p-2 rounded-lg transition-all ${isIncognito ? 'bg-zinc-800 text-white shadow-lg' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400'}`} 
+                                    title={t.incognito}
+                                >
+                                    <Icon name="Shield" size={20} />
+                                </button>
+                                
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); setIsMoreMenuOpen(!isMoreMenuOpen); }}
+                                    className={`p-2 rounded-lg transition-all ${isMoreMenuOpen ? 'bg-zinc-100 dark:bg-zinc-800 text-blue-500' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400'}`}
+                                >
+                                    <Icon name="MoreVertical" size={20} />
+                                </button>
+
+                                {/* Выпадающее меню */}
+                                {isMoreMenuOpen && (
+                                    <div className="absolute top-12 right-0 w-72 bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden z-50 animate-fade-in p-2">
+                                        <div className="flex items-center justify-around p-2 border-b border-zinc-100 dark:border-zinc-800 mb-2">
+                                            <button onClick={goBack} className="p-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"><Icon name="ArrowLeft" /></button>
+                                            <button onClick={goForward} className="p-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"><Icon name="ArrowRight" /></button>
+                                            <button onClick={() => setIframeKey(k => k + 1)} className="p-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl"><Icon name="RotateCw" /></button>
+                                        </div>
+                                        <div className="flex flex-col gap-0.5">
+                                            <MenuItem icon="Smartphone" label={t.makeDefault} onClick={() => alert('Simulated: Set as default browser')} />
+                                            <MenuItem icon="Share2" label={t.share} onClick={() => { navigator.clipboard.writeText(url); alert('URL copied to clipboard'); }} />
+                                            <MenuItem icon="PlusSquare" label={t.addBookmark} onClick={addBookmark} />
+                                            <MenuItem icon="Bookmark" label={t.bookmarks} onClick={() => setIsBookmarksOpen(true)} />
+                                            <div className="h-[1px] bg-zinc-100 dark:bg-zinc-800 my-1 mx-2"></div>
+                                            <MenuItem icon="Monitor" label={t.desktopVersion} onClick={() => alert('Simulated: User Agent changed to Desktop')} />
+                                            <MenuItem icon="Search" label={t.findOnPage} onClick={() => alert('Simulated: Find on page search bar')} />
+                                            <MenuItem icon="Printer" label={t.printPage} onClick={() => window.print()} />
+                                            <MenuItem icon="Home" label={t.addToHome} onClick={() => alert('Simulated: Added to home screen')} />
+                                            <div className="h-[1px] bg-zinc-100 dark:bg-zinc-800 my-1 mx-2"></div>
+                                            <MenuItem icon="Key" label={t.passwords} onClick={() => setIsPasswordsOpen(true)} />
+                                            <MenuItem icon="Download" label={t.downloads} onClick={() => alert('Simulated: Downloads folder opened')} />
+                                            <MenuItem icon="Settings" label={t.settings} onClick={() => setIsSettingsOpen(true)} />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="h-8 w-[1px] bg-zinc-200 dark:bg-zinc-800 mx-1"></div>
+                                <button onClick={() => setIsProfilesOpen(true)} className="flex items-center gap-2 p-1 pr-3 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-all">
+                                    <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center text-lg profile-avatar">{activeProfile.avatar}</div>
+                                    <span className="text-xs font-medium hidden md:block">{activeProfile.name}</span>
+                                </button>
+                            </div>
+                        </header>
+
+                        <div className="flex-1 bg-white relative">
+                            <iframe 
+                                key={iframeKey}
+                                src={getProxiedUrl(url)} 
+                                className="w-full h-full border-none"
+                                sandbox="allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-presentation allow-same-origin allow-scripts"
+                                allow="geolocation; microphone; camera; midi; encrypted-media; clipboard-read; clipboard-write"
+                            />
+                        </div>
+                    </main>
+
+                    {/* Modals */}
+                    <Modal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} title={t.settings}>
+                        <div className="flex flex-col gap-6">
+                            <div className="flex items-center justify-between">
+                                <span>{t.adBlock}</span>
+                                <button onClick={() => updateSettings({ adBlockEnabled: !activeProfile.settings.adBlockEnabled })} className={`w-12 h-6 rounded-full relative transition-colors ${activeProfile.settings.adBlockEnabled ? 'bg-blue-600' : 'bg-gray-300'}`}>
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${activeProfile.settings.adBlockEnabled ? 'left-7' : 'left-1'}`}></div>
+                                </button>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <span>{t.theme}</span>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {['light', 'dark', 'system'].map(mode => (
+                                        <button key={mode} onClick={() => updateSettings({ theme: mode })} className={`p-2 rounded-xl border-2 text-xs uppercase font-bold ${activeProfile.settings.theme === mode ? 'border-blue-600 text-blue-600' : 'border-transparent bg-gray-50 dark:bg-zinc-800'}`}>{t[mode]}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <span>{t.language}</span>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {['ru', 'en'].map(lang => (
+                                        <button key={lang} onClick={() => updateSettings({ language: lang })} className={`p-2 rounded-xl border-2 font-bold ${activeProfile.settings.language === lang ? 'border-blue-600 text-blue-600' : 'border-transparent bg-gray-50 dark:bg-zinc-800'}`}>{lang === 'ru' ? 'Русский' : 'English'}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <span>{t.searchEngine}</span>
+                                <div className="flex flex-col gap-2">
+                                    {[...defaultSearchEngines, ...activeProfile.settings.customSearchEngines].map(engine => (
+                                        <div key={engine.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-zinc-800 rounded-xl">
+                                            <button onClick={() => updateSettings({ searchEngineId: engine.id })} className="flex items-center gap-3 flex-1 text-left">
+                                                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${activeProfile.settings.searchEngineId === engine.id ? 'border-blue-600' : 'border-gray-400'}`}>
+                                                    {activeProfile.settings.searchEngineId === engine.id && <div className="w-2 h-2 bg-blue-600 rounded-full"></div>}
+                                                </div>
+                                                <span className="text-sm">{engine.name}</span>
+                                            </button>
+                                            {activeProfile.settings.customSearchEngines.find(e => e.id === engine.id) && (
+                                                <button onClick={() => updateSettings({ customSearchEngines: activeProfile.settings.customSearchEngines.filter(e => e.id !== engine.id) })} className="text-red-500 p-1"><Icon name="Trash2" size={16} /></button>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <button onClick={() => {
+                                        const name = prompt('Name:');
+                                        const url = prompt('URL (use %s for query):');
+                                        if (name && url) {
+                                            const newEngine = { id: Date.now().toString(), name, url };
+                                            updateSettings({ customSearchEngines: [...activeProfile.settings.customSearchEngines, newEngine] });
+                                        }
+                                    }} className="text-xs text-blue-600 font-bold p-2 text-center border-2 border-dashed border-blue-600 rounded-xl">+ Add Search Engine</button>
+                                </div>
+                            </div>
+                            <div className="flex items-center justify-between border-t pt-4">
+                                <span>{t.proxyMode}</span>
+                                <button onClick={() => updateSettings({ proxyEnabled: !activeProfile.settings.proxyEnabled })} className={`w-12 h-6 rounded-full relative transition-colors ${activeProfile.settings.proxyEnabled ? 'bg-green-600' : 'bg-gray-300'}`}>
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${activeProfile.settings.proxyEnabled ? 'left-7' : 'left-1'}`}></div>
+                                </button>
+                            </div>
+                        </div>
+                    </Modal>
+
+                    <Modal isOpen={isProfilesOpen} onClose={() => setIsProfilesOpen(false)} title={t.profiles}>
+                        <div className="flex flex-col gap-3">
+                            {profiles.map(p => (
+                                <button key={p.id} onClick={() => { setActiveProfileId(p.id); setIsProfilesOpen(false); }} className={`flex items-center justify-between p-4 rounded-2xl border-2 ${activeProfileId === p.id ? 'border-blue-600 bg-blue-50' : 'border-transparent bg-gray-50 dark:bg-zinc-800'}`}>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-2xl">{p.avatar}</span>
+                                        <span className="font-bold">{p.name}</span>
+                                    </div>
+                                    {activeProfileId === p.id && <Icon name="Check" className="text-blue-600" />}
+                                </button>
+                            ))}
+                            <button onClick={createProfile} className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl mt-4 hover:bg-blue-700 transition-colors">{t.addProfile}</button>
+                        </div>
+                    </Modal>
+
+                    <Modal isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} title={t.history}>
+                        <div className="flex flex-col gap-2">
+                            {activeProfile.history.length === 0 ? <div className="text-center py-8 text-gray-400">{t.noHistory}</div> : 
+                                activeProfile.history.map(h => (
+                                    <div key={h.id} className="flex items-center gap-2">
+                                        <button onClick={() => { navigateTo(h.url); setIsHistoryOpen(false); }} className="flex-1 p-3 text-left bg-gray-50 dark:bg-zinc-800 rounded-xl hover:bg-gray-100 transition-all">
+                                            <div className="text-sm font-bold truncate">{h.url}</div>
+                                            <div className="text-[10px] text-gray-500">{new Date(h.timestamp).toLocaleString()}</div>
+                                        </button>
+                                        <button onClick={() => updateActiveProfile({ history: activeProfile.history.filter(item => item.id !== h.id) })} className="p-2 text-red-500"><Icon name="Trash2" size={18} /></button>
+                                    </div>
+                                ))
+                            }
+                        </div>
+                    </Modal>
+
+                    <Modal isOpen={isBookmarksOpen} onClose={() => setIsBookmarksOpen(false)} title={t.bookmarks}>
+                        <div className="flex flex-col gap-2">
+                            {activeProfile.bookmarks.length === 0 ? <div className="text-center py-8 text-gray-400">{t.noBookmarks}</div> : 
+                                activeProfile.bookmarks.map(b => (
+                                    <div key={b.id} className="flex items-center gap-2">
+                                        <button onClick={() => { navigateTo(b.url); setIsBookmarksOpen(false); }} className="flex-1 p-3 text-left bg-gray-50 dark:bg-zinc-800 rounded-xl hover:bg-gray-100 transition-all">
+                                            <div className="text-sm font-bold truncate">{b.title}</div>
+                                            <div className="text-[10px] text-gray-500 truncate">{b.url}</div>
+                                        </button>
+                                        <button onClick={() => updateActiveProfile({ bookmarks: activeProfile.bookmarks.filter(item => item.id !== b.id) })} className="p-2 text-red-500"><Icon name="Trash2" size={18} /></button>
+                                    </div>
+                                ))
+                            }
+                        </div>
+                    </Modal>
+
+                    <Modal isOpen={isPasswordsOpen} onClose={() => setIsPasswordsOpen(false)} title={t.passwords}>
+                        <div className="flex flex-col gap-2">
+                            {activeProfile.passwords.length === 0 ? <div className="text-center py-8 text-gray-400">{t.noPasswords}</div> : 
+                                activeProfile.passwords.map(p => (
+                                    <div key={p.id} className="p-4 bg-gray-50 dark:bg-zinc-800 rounded-xl flex items-center justify-between">
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-bold text-blue-600">{p.site}</span>
+                                            <span className="text-sm">{p.username}</span>
+                                            <span className="text-xs text-gray-400">••••••••</span>
+                                        </div>
+                                        <button onClick={() => updateActiveProfile({ passwords: activeProfile.passwords.filter(item => item.id !== p.id) })} className="text-red-500"><Icon name="Trash2" size={18} /></button>
+                                    </div>
+                                ))
+                            }
+                        </div>
+                    </Modal>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
